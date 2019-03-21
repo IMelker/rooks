@@ -4,7 +4,7 @@
 
 #include <iostream>
 #include <vector>
-#include <tuple>     // std::tie
+#include <tuple>
 #include <algorithm> // std::find_if
 #include <random>
 #include <thread>
@@ -32,12 +32,11 @@ constexpr int collision_delay_sec = 5;
 constexpr int field_size = 8;
 
 std::mutex m;
+std::mutex rw_m;
 std::condition_variable cv_move;
 std::atomic_bool start(false);
 
 std::vector<class Rook> rooks;
-
-using v_iterator = decltype(rooks.cend());
 
 bool onTheMoveWay(const Rook& rook, int new_x, int new_y);
 bool posIsTaken(int x, int y);
@@ -48,7 +47,7 @@ bool isSurrounded(const Rook& rook);
 */
 template <typename Arg, typename... Args>
 void blockingLog(std::ostream &stream, Arg &&arg, Args &&... args) {
-  std::unique_lock<std::mutex> ul(m);
+  std::lock_guard<std::mutex> ul(m);
   stream << std::forward<Arg>(arg);
   using expander = int[];
   (void)expander{0, (void(stream << std::forward<Args>(args)), 0)...};
@@ -72,7 +71,7 @@ int getRandomInt() {
 * @brief  Rook class provides run thread and current position
 */
 class Rook {
-  friend v_iterator getRookByPos(int x, int y);
+  friend bool posIsTaken(int x, int y);
   friend bool onTheMoveWay(const Rook& rook, int new_x, int new_y);
   friend bool isSurrounded(const Rook& rook);
  public:
@@ -135,7 +134,7 @@ class Rook {
     int new_x, new_y;
     do {
       new_x = x; new_y = y;
-      if (getRandomInt<0,1>()) {
+      if (getRandomInt<0, 1>()) {
         new_x = getRandomInt();
       } else {
         new_y = getRandomInt();
@@ -160,8 +159,8 @@ class Rook {
    * @brief Moves current rook position
    */
   void move(int x_, int y_) {
-    x = x_;
-    y = y_;
+    std::lock_guard<std::mutex> lg(rw_m);
+    x = x_; y = y_;
   }
 
   bool isBlocked(const time_t& timestamp) {
@@ -183,7 +182,10 @@ int Rook::st_num = 0;
 * @brief  Checks if way collides with other rook
 */
 bool onTheMoveWay(const Rook& rook, int new_x, int new_y) {
+  std::unique_lock<std::mutex> ul(rw_m, std::defer_lock);
   auto it = rooks.cend();
+
+  ul.lock();
   if (rook.x != new_x) {
     it = std::find_if(rooks.cbegin(), rooks.cend(), [&](const Rook& other) {
       return (rook.y == other.y) && ((rook.x < new_x) ? (rook.x < other.x && other.x <= new_x)
@@ -195,6 +197,8 @@ bool onTheMoveWay(const Rook& rook, int new_x, int new_y) {
                                             : (rook.y > other.y && other.y >= new_y));
     });
   }
+  ul.unlock();
+
   if (it != rooks.cend()) {
     blockingLog(std::cerr, "-\trook[", rook.num, "]: failed to move from (", rook.x, ",", rook.y, ") to (",
                 new_x, ",", new_y, ") - collides Rook[", it->num, "] at (", it->x, ",", it->y, ")");
@@ -206,30 +210,33 @@ bool onTheMoveWay(const Rook& rook, int new_x, int new_y) {
 /**
 * @brief  Checks if postion is already taken
 */
-inline v_iterator getRookByPos(int x, int y) {
-  return std::find_if(rooks.cbegin(), rooks.cend(), [x, y](const Rook& other){
+bool posIsTaken(int x, int y) {
+  std::lock_guard<std::mutex> lg(rw_m);
+  auto it = std::find_if(rooks.cbegin(), rooks.cend(), [x, y](const Rook& other){
     return other.x == x && other.y == y;
   });
+  return it != rooks.cend();
 }
-
-inline bool posIsTaken(int x, int y) {
-  return getRookByPos(x, y) != rooks.cend();
-}
-/**@{*/
 
 /**
 * @brief  Checks if rook is surrounded by ended rooks
 */
 bool isSurrounded(const Rook& rook) {
-  auto end = rooks.cend();
-  auto right = getRookByPos(rook.x + 1, rook.y);
-  auto left = getRookByPos(rook.x - 1, rook.y);
-  auto up = getRookByPos(rook.x, rook.y + 1);
-  auto down = getRookByPos(rook.x, rook.y - 1);
-  return (right != end && right->is_ended) &&
-         (left != end && left->is_ended) &&
-         (up != end && up->is_ended) &&
-         (down != end && down->is_ended);
+  std::lock_guard<std::mutex> lg(rw_m);
+  auto sides_filed = std::make_tuple(false, false, false, false);
+  for (auto& other : rooks) {
+    if (!other.is_ended)
+      continue;
+    if (other.x == rook.x + 1 && other.y == rook.y)
+      std::get<0>(sides_filed) = true;
+    else if (other.x == rook.x - 1 && other.y == rook.y)
+      std::get<1>(sides_filed) = true;
+    else if (other.x == rook.x && other.y == rook.y + 1)
+      std::get<2>(sides_filed) = true;
+    else if (other.x == rook.x && other.y == rook.y - 1)
+      std::get<3>(sides_filed) = true;
+  }
+  return sides_filed == std::make_tuple(true, true, true, true);
 }
 
 int main() {
