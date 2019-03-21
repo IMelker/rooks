@@ -206,7 +206,7 @@ bool posIsTaken(int x, int y) {
 int main() {
   auto rook_count = getRandomInt<rook_count_min, rook_count_max>();
   std::cout << "====\tInit " << rook_count <<" rooks on the field\t====" << std::endl;
-  rooks = std::vector<Rook>(static_cast<size_t >(rook_count));
+  rooks = std::vector<Rook>(static_cast<size_t >(rook_count)); // init rook threads and start positions
 
   std::cout << "====\tWait 1 seconds for start\t====" << std::endl;
   std::this_thread::sleep_for(std::chrono::milliseconds(1000));
