@@ -23,9 +23,11 @@
 * Всё заканчивается, когда все фигуры сделают по 50 ходов
 */
 
-constexpr size_t rook_count = 6;
+constexpr size_t rook_count_min = 4;
+constexpr size_t rook_count_max = 6;
 constexpr int step_max_count = 50;
-constexpr int step_delay = 200;
+constexpr int step_delay_min = 200;
+constexpr int step_delay_max = 300;
 constexpr int collision_delay_sec = 5;
 constexpr int field_size = 8;
 
@@ -94,7 +96,7 @@ class Rook {
     int new_x = x, new_y = y;
 
     for (int step = 0; step < step_max_count; ++step) {
-      std::this_thread::sleep_for(std::chrono::milliseconds(step_delay));
+      std::this_thread::sleep_for(std::chrono::milliseconds(getRandomInt<step_delay_min,step_delay_max>()));
 
       bool is_blocked = isBlocked(timestamp);
       if (!is_blocked) {
@@ -202,8 +204,9 @@ bool posIsTaken(int x, int y) {
 }
 
 int main() {
-  std::cout << "====\tInit " << rook_count << " rooks on the field\t====" << std::endl;
-  rooks = std::vector<Rook>(rook_count); // init rook threads and start positions
+  auto rook_count = getRandomInt<rook_count_min, rook_count_max>();
+  std::cout << "====\tInit " << rook_count <<" rooks on the field\t====" << std::endl;
+  rooks = std::vector<Rook>(static_cast<size_t >(rook_count));
 
   std::cout << "====\tWait 1 seconds for start\t====" << std::endl;
   std::this_thread::sleep_for(std::chrono::milliseconds(1000));
