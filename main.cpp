@@ -37,8 +37,11 @@ std::atomic_bool start(false);
 
 std::vector<class Rook> rooks;
 
+using v_iterator = decltype(rooks.cend());
+
 bool onTheMoveWay(const Rook& rook, int new_x, int new_y);
 bool posIsTaken(int x, int y);
+bool isSurrounded(const Rook& rook);
 
 /**
 * @brief  Helper for thread safe cout
@@ -69,10 +72,11 @@ int getRandomInt() {
 * @brief  Rook class provides run thread and current position
 */
 class Rook {
+  friend v_iterator getRookByPos(int x, int y);
   friend bool onTheMoveWay(const Rook& rook, int new_x, int new_y);
-  friend bool posIsTaken(int x, int y);
+  friend bool isSurrounded(const Rook& rook);
  public:
-  Rook() : num(st_num++), x(-1), y(-1), runnable(&Rook::run, this) {
+  Rook() : num(st_num++), x(-1), y(-1), is_ended(false), runnable(&Rook::run, this) {
     std::tie(x,y) = generateDefaultPos();
     std::cout << "rook[" << num << "]: emplaced (" << x << "," << y << ")" << std::endl;
   }
@@ -106,6 +110,10 @@ class Rook {
       if(onTheMoveWay(*this, new_x, new_y)) {
         if (!is_blocked) {
           timestamp = std::time(nullptr);
+          if (isSurrounded(*this)) {
+            blockingLog(std::cout, "+\trook[", num, "]: at (", x, ",", y, ") is surrounded by ended rooks");
+            break;
+          }
         }
         --step;
       } else {
@@ -117,6 +125,7 @@ class Rook {
         move(new_x, new_y);
       }
     }
+    is_ended = true;
   }
 
   /**
@@ -162,6 +171,7 @@ class Rook {
   const int num;
   std::atomic_int x;
   std::atomic_int y;
+  std::atomic_bool is_ended;
   std::thread runnable;
   static int st_num;
 };
@@ -196,11 +206,30 @@ bool onTheMoveWay(const Rook& rook, int new_x, int new_y) {
 /**
 * @brief  Checks if postion is already taken
 */
-bool posIsTaken(int x, int y) {
-  auto it = std::find_if(rooks.cbegin(), rooks.cend(), [x, y](const Rook& other){
+inline v_iterator getRookByPos(int x, int y) {
+  return std::find_if(rooks.cbegin(), rooks.cend(), [x, y](const Rook& other){
     return other.x == x && other.y == y;
   });
-  return it != rooks.cend();
+}
+
+inline bool posIsTaken(int x, int y) {
+  return getRookByPos(x, y) != rooks.cend();
+}
+/**@{*/
+
+/**
+* @brief  Checks if rook is surrounded by ended rooks
+*/
+bool isSurrounded(const Rook& rook) {
+  auto end = rooks.cend();
+  auto right = getRookByPos(rook.x + 1, rook.y);
+  auto left = getRookByPos(rook.x - 1, rook.y);
+  auto up = getRookByPos(rook.x, rook.y + 1);
+  auto down = getRookByPos(rook.x, rook.y - 1);
+  return (right != end && right->is_ended) &&
+         (left != end && left->is_ended) &&
+         (up != end && up->is_ended) &&
+         (down != end && down->is_ended);
 }
 
 int main() {
